@@ -19,7 +19,7 @@ config/credentials.json
 # Logs and data
 *.log
 *.csv
-data/
+/data/
 
 # IDE
 .idea/
