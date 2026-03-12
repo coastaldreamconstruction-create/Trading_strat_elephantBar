@@ -127,7 +127,7 @@ CONTINUOUS_SYMBOLS = {
     "MYM": "MYM.v.0",   # Micro E-mini Dow
     "MCL": "MCL.v.0",   # Micro WTI Crude Oil
     "MGC": "MGC.v.0",   # Micro Gold
-    "SIL": "SIL.v.0",   # Micro Silver
+    "SICK": "SIL.v.0",   # 100 oz Silver (uses SIL continuous)
 }
 
 

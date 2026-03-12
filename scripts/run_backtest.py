@@ -141,7 +141,7 @@ def main():
     parser = argparse.ArgumentParser(description="Elephant Bar Backtest Runner")
     parser.add_argument(
         "--contract", default="MES",
-        help="Contract root: MES, MNQ, MYM, MCL, MGC, SIL (default: MES)",
+        help="Contract root: MES, MNQ, MYM, MCL, MGC, SICK (default: MES)",
     )
     parser.add_argument(
         "--start", default=None,

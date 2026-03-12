@@ -43,7 +43,7 @@ CONTRACTS_2MIN = {
     "MYM": {"tick_size": 1.00, "tick_value": 0.50, "multiplier": 0.5},
     "MCL": {"tick_size": 0.01, "tick_value": 1.00, "multiplier": 100},
     "MGC": {"tick_size": 0.10, "tick_value": 1.00, "multiplier": 10},
-    "SIL": {"tick_size": 0.005, "tick_value": 5.00, "multiplier": 1000},
+    "SICK": {"tick_size": 0.01, "tick_value": 1.00, "multiplier": 100},
 }
 
 # 1-hour longs-only subset
@@ -51,7 +51,7 @@ CONTRACTS_1HR = {
     "MES": CONTRACTS_2MIN["MES"],
     "MCL": CONTRACTS_2MIN["MCL"],
     "MGC": CONTRACTS_2MIN["MGC"],
-    "SIL": CONTRACTS_2MIN["SIL"],
+    "SICK": CONTRACTS_2MIN["SICK"],
 }
 
 # ─────────────────────────────────────────────
