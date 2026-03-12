@@ -28,6 +28,9 @@ ELEPHANT_MULT = 2.0    # Candle body must be >= this x avg body size
 AVG_BODY_PERIOD = 20   # Lookback for average body size calculation
 PROXIMITY_ATR = 1.5    # Color-game add-on: bar must be within this x ATR of 20 SMA
 PUSH_EXIT_COUNT = 6    # Number of consecutive new highs/lows to trigger exit
+TRAILING_STOP = False  # Enable trailing stop (moves stop to breakeven, then trails)
+TRAIL_TRIGGER_ATR = 1.0  # Move stop to breakeven after price moves this x ATR in our favor
+TRAIL_STEP_ATR = 0.5     # Once trailing, move stop by this x ATR on each new extreme
 
 # ─────────────────────────────────────────────
 # Timeframe

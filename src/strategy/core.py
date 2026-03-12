@@ -85,6 +85,9 @@ class ElephantBarStrategy:
         avg_body_period: int = config.AVG_BODY_PERIOD,
         proximity_atr: float = config.PROXIMITY_ATR,
         push_exit_count: int = config.PUSH_EXIT_COUNT,
+        trailing_stop: bool = config.TRAILING_STOP,
+        trail_trigger_atr: float = config.TRAIL_TRIGGER_ATR,
+        trail_step_atr: float = config.TRAIL_STEP_ATR,
     ):
         self.symbol = symbol
         self.tick_size = tick_size
@@ -99,6 +102,9 @@ class ElephantBarStrategy:
         self.avg_body_period = avg_body_period
         self.proximity_atr = proximity_atr
         self.push_exit_count = push_exit_count
+        self.trailing_stop = trailing_stop
+        self.trail_trigger_atr = trail_trigger_atr
+        self.trail_step_atr = trail_step_atr
 
         # State
         self.bars: list[Bar] = []
@@ -203,6 +209,37 @@ class ElephantBarStrategy:
 
         return trade.push_count >= self.push_exit_count
 
+    def _update_trailing_stop(self, bar: Bar):
+        """
+        Trail the stop loss when enabled.
+        Phase 1: Once price moves trail_trigger_atr x ATR in our favor, move stop to breakeven.
+        Phase 2: Continue trailing by trail_step_atr x ATR on each new extreme.
+        """
+        if not self.trailing_stop or self.open_trade is None:
+            return
+
+        atr = self._atr()
+        if atr is None or atr == 0:
+            return
+
+        trade = self.open_trade
+        trigger_dist = self.trail_trigger_atr * atr
+        trail_offset = self.trail_step_atr * atr
+
+        if trade.direction == "LONG":
+            favorable_move = bar.high - trade.entry_price
+            if favorable_move >= trigger_dist:
+                # Trail: new stop = highest high - trail_offset, but never below current stop
+                new_stop = trade.best_price - trail_offset
+                if new_stop > trade.stop_price:
+                    trade.stop_price = new_stop
+        else:  # SHORT
+            favorable_move = trade.entry_price - bar.low
+            if favorable_move >= trigger_dist:
+                new_stop = trade.best_price + trail_offset
+                if new_stop < trade.stop_price:
+                    trade.stop_price = new_stop
+
     def _check_stop(self, bar: Bar) -> bool:
         """Returns True if stop loss has been hit."""
         if self.open_trade is None:
@@ -237,6 +274,9 @@ class ElephantBarStrategy:
 
         # ── Manage existing trade ──
         if self.open_trade is not None:
+            # Update trailing stop before checking it
+            self._update_trailing_stop(bar)
+
             # Check stop loss
             if self._check_stop(bar):
                 signals.append(Signal(
