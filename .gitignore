@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+elephant_bot_env/
+
+# Secrets — never commit
+config/secrets.yaml
+config/credentials.json
+
+# Logs and data
+*.log
+*.csv
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
