@@ -75,16 +75,22 @@ def fetch_futures_bars(
 
     bars = []
     for idx, row in df.iterrows():
-        # Databento OHLCV prices are in fixed-point (multiply by 1e-9 for dollars)
-        scale = 1e-9
         ts = idx.timestamp() if hasattr(idx, 'timestamp') else float(idx)
+
+        # Databento fixed-point prices: stored as int64 in 1e-9 units.
+        # If values are > 1e6, they need scaling; if already in dollar range, use as-is.
+        raw_open = float(row["open"])
+        if raw_open > 1e6:
+            scale = 1e-9
+        else:
+            scale = 1.0
 
         bars.append(Bar(
             timestamp=ts,
-            open=row["open"] * scale,
-            high=row["high"] * scale,
-            low=row["low"] * scale,
-            close=row["close"] * scale,
+            open=raw_open * scale,
+            high=float(row["high"]) * scale,
+            low=float(row["low"]) * scale,
+            close=float(row["close"]) * scale,
             volume=float(row["volume"]),
         ))
 

@@ -199,6 +199,7 @@ class Backtester:
         )
 
         pending_entry: Optional[Signal] = None
+        active_entry: Optional[Signal] = None  # Tracks the filled entry for P&L
         daily_pnl = 0.0
 
         for bar in bars:
@@ -208,7 +209,7 @@ class Backtester:
                 break
 
             # Check if a pending entry would have filled on this bar
-            if pending_entry is not None:
+            if pending_entry is not None and not strategy.is_in_trade:
                 filled = False
                 if pending_entry.direction == "LONG" and bar.high >= pending_entry.entry_price:
                     filled = True
@@ -217,53 +218,47 @@ class Backtester:
 
                 if filled:
                     strategy.register_fill(pending_entry)
+                    active_entry = pending_entry
+                    pending_entry = None
                     logger.debug(
                         "Fill: %s %s @ %.4f",
-                        pending_entry.direction, self.symbol, pending_entry.entry_price,
+                        active_entry.direction, self.symbol, active_entry.entry_price,
                     )
-                else:
-                    # Entry not triggered — cancel it
-                    pending_entry = None
+                # Keep pending for a few more bars (don't cancel immediately)
+                # In real trading, limit orders stay open until cancelled
 
             # Process the bar
             signals = strategy.on_bar(bar)
 
             for signal in signals:
                 if signal.signal_type == "ENTRY":
-                    # Queue entry for next bar fill check (avoid look-ahead)
-                    pending_entry = signal
+                    if not strategy.is_in_trade:
+                        # Queue entry for next bar fill check (avoid look-ahead)
+                        pending_entry = signal
 
                 elif signal.signal_type in ("PUSH_EXIT", "STOP_EXIT"):
-                    if strategy.open_trade is None and pending_entry is not None:
-                        # Trade was just closed by strategy's on_bar
-                        exit_price = signal.entry_price
-                        entry_signal = pending_entry
-                    elif pending_entry is not None:
-                        exit_price = signal.entry_price
-                        entry_signal = pending_entry
-                    else:
-                        continue
+                    if active_entry is not None:
+                        trade = Trade(
+                            symbol=self.symbol,
+                            direction=signal.direction,
+                            entry_price=active_entry.entry_price,
+                            exit_price=signal.entry_price,
+                            stop_price=active_entry.stop_price,
+                            entry_timestamp=active_entry.bar_timestamp,
+                            exit_timestamp=signal.bar_timestamp,
+                            exit_reason=signal.signal_type,
+                            tick_size=self.tick_size,
+                            tick_value=self.tick_value,
+                        )
+                        result.trades.append(trade)
+                        daily_pnl += trade.pnl
+                        active_entry = None
+                        pending_entry = None
 
-                    trade = Trade(
-                        symbol=self.symbol,
-                        direction=signal.direction,
-                        entry_price=entry_signal.entry_price,
-                        exit_price=exit_price,
-                        stop_price=entry_signal.stop_price,
-                        entry_timestamp=entry_signal.bar_timestamp,
-                        exit_timestamp=signal.bar_timestamp,
-                        exit_reason=signal.signal_type,
-                        tick_size=self.tick_size,
-                        tick_value=self.tick_value,
-                    )
-                    result.trades.append(trade)
-                    daily_pnl += trade.pnl
-                    pending_entry = None
-
-                    logger.debug(
-                        "Trade closed (%s): %s P&L=$%.2f",
-                        trade.exit_reason, trade.direction, trade.pnl,
-                    )
+                        logger.debug(
+                            "Trade closed (%s): %s P&L=$%.2f",
+                            trade.exit_reason, trade.direction, trade.pnl,
+                        )
 
         return result
 
