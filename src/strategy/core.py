@@ -92,6 +92,7 @@ class ElephantBarStrategy:
         tod_start_hour: Optional[int] = config.TOD_START_HOUR,
         tod_end_hour: Optional[int] = config.TOD_END_HOUR,
         min_atr: float = config.MIN_ATR,
+        skip_narrow: bool = False,
     ):
         self.symbol = symbol
         self.tick_size = tick_size
@@ -112,6 +113,7 @@ class ElephantBarStrategy:
         self.tod_start_hour = tod_start_hour
         self.tod_end_hour = tod_end_hour
         self.min_atr = min_atr
+        self.skip_narrow = skip_narrow
 
         # State
         self.bars: list[Bar] = []
@@ -338,7 +340,7 @@ class ElephantBarStrategy:
             return signals
 
         # ── Look for new entry ──
-        narrow = self._is_narrow(sma_fast, sma_slow, atr)
+        narrow = True if self.skip_narrow else self._is_narrow(sma_fast, sma_slow, atr)
         elephant = self._is_elephant(bar, avg_body)
         no_tail = bar.is_no_tail
 

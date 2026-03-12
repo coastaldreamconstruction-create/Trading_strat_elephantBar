@@ -3,10 +3,8 @@
 A/B Test: Compare strategy variants to isolate the effect of each change.
 
 Tests:
-  Baseline    — 6 pushes, fixed stop, no filters (current settings)
-  Test D      — Time-of-day filter: only trade during RTH (14:30-21:00 UTC)
-  Test E      — Minimum ATR threshold: skip low-volatility entries
-  Test F      — Per-contract tuning: optimized parameters per contract
+  Baseline    — Full strategy (narrow SMAs + elephant bar + no tail)
+  Test G      — No narrow SMA filter (elephant bar + no tail only)
 
 Usage:
     # Uses saved CSVs (no API calls needed)
@@ -32,47 +30,15 @@ CONTRACTS = ["MES", "MNQ", "MYM", "MCL", "MGC"]
 # ── Variant definitions ──
 # Each variant is tested against the baseline in isolation.
 VARIANTS = {
-    "Baseline (6 push, fixed stop)": {
+    "Baseline (narrow + elephant)": {
         "push_exit_count": 6,
         "trailing_stop": False,
     },
-    "Test D (RTH only 9:30a-4p ET)": {
+    "Test G (no narrow SMA filter)": {
         "push_exit_count": 6,
         "trailing_stop": False,
-        "tod_start_hour": 14,   # 9:30 AM ET ≈ 14:00 UTC (we round to full hour)
-        "tod_end_hour": 21,     # 4:00 PM ET = 21:00 UTC
+        "skip_narrow": True,
     },
-    "Test E (min ATR filter)": {
-        "push_exit_count": 6,
-        "trailing_stop": False,
-        # min_atr is set per-contract below since ATR scale varies
-    },
-    "Test F (per-contract tuning)": {
-        "push_exit_count": 6,
-        "trailing_stop": False,
-        # Overridden per-contract below
-    },
-}
-
-# Per-contract min ATR thresholds (roughly 50th percentile ATR for each)
-# These filter out the lowest-volatility periods
-MIN_ATR_BY_CONTRACT = {
-    "MES": 3.0,     # ~3 ES points
-    "MNQ": 15.0,    # ~15 NQ points
-    "MYM": 30.0,    # ~30 YM points
-    "MCL": 0.15,    # ~$0.15 crude move
-    "MGC": 3.0,     # ~$3 gold move
-}
-
-# Per-contract parameter tuning
-# MCL and MGC get tighter elephant_mult (they have spikier bars)
-# MNQ gets wider narrow_threshold (faster divergence from 200 SMA)
-PER_CONTRACT_KWARGS = {
-    "MES": {"push_exit_count": 6, "trailing_stop": False},
-    "MNQ": {"push_exit_count": 6, "trailing_stop": False, "narrow_threshold": 1.5},
-    "MYM": {"push_exit_count": 6, "trailing_stop": False},
-    "MCL": {"push_exit_count": 6, "trailing_stop": False, "elephant_mult": 1.5},
-    "MGC": {"push_exit_count": 6, "trailing_stop": False, "elephant_mult": 1.5},
 }
 
 
@@ -91,18 +57,10 @@ def find_csv(root: str) -> str:
 
 
 def run_variant(root: str, bars, variant_name: str, variant_kwargs: dict) -> BacktestResult:
-    """Run a single backtest variant, applying per-contract overrides."""
+    """Run a single backtest variant."""
     spec = config.CONTRACTS_2MIN.get(root)
     if spec is None:
         return BacktestResult(symbol=root)
-
-    # Build kwargs — start with variant defaults, apply per-contract overrides
-    kwargs = dict(variant_kwargs)
-
-    if variant_name == "Test E (min ATR filter)":
-        kwargs["min_atr"] = MIN_ATR_BY_CONTRACT.get(root, 0.0)
-    elif variant_name == "Test F (per-contract tuning)":
-        kwargs = PER_CONTRACT_KWARGS.get(root, kwargs)
 
     bt = Backtester(
         symbol=root,
@@ -111,7 +69,7 @@ def run_variant(root: str, bars, variant_name: str, variant_kwargs: dict) -> Bac
         allow_shorts=True,
         starting_capital=config.STARTING_CAPITAL,
         max_daily_loss=config.MAX_DAILY_LOSS,
-        **kwargs,
+        **variant_kwargs,
     )
     return bt.run(bars)
 
@@ -186,10 +144,8 @@ def main():
     # ── Print variant descriptions ──
     print()
     print("Variant Descriptions:")
-    print("  Baseline — Current settings: 6 push exit, fixed stop, no filters")
-    print("  Test D   — Time-of-day filter: only enter during US RTH (9:30a-4p ET)")
-    print("  Test E   — Min ATR filter: skip entries when volatility is below threshold")
-    print("  Test F   — Per-contract tuning: adjusted elephant_mult & narrow_threshold")
+    print("  Baseline — Full strategy: narrow SMAs (20/200 gap <= 1x ATR) + elephant bar + no tail")
+    print("  Test G   — Remove narrow SMA requirement: only elephant bar + no tail needed")
     print()
 
 
