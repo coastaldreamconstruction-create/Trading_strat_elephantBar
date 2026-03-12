@@ -3,6 +3,7 @@ Elephant Bar Breakout Strategy — Core Signal Logic
 Pure computation, no broker dependency. Easy to unit-test and backtest.
 """
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 from src import config
@@ -88,6 +89,9 @@ class ElephantBarStrategy:
         trailing_stop: bool = config.TRAILING_STOP,
         trail_trigger_atr: float = config.TRAIL_TRIGGER_ATR,
         trail_step_atr: float = config.TRAIL_STEP_ATR,
+        tod_start_hour: Optional[int] = config.TOD_START_HOUR,
+        tod_end_hour: Optional[int] = config.TOD_END_HOUR,
+        min_atr: float = config.MIN_ATR,
     ):
         self.symbol = symbol
         self.tick_size = tick_size
@@ -105,6 +109,9 @@ class ElephantBarStrategy:
         self.trailing_stop = trailing_stop
         self.trail_trigger_atr = trail_trigger_atr
         self.trail_step_atr = trail_step_atr
+        self.tod_start_hour = tod_start_hour
+        self.tod_end_hour = tod_end_hour
+        self.min_atr = min_atr
 
         # State
         self.bars: list[Bar] = []
@@ -159,6 +166,26 @@ class ElephantBarStrategy:
         if avg_body == 0:
             return False
         return bar.body >= self.elephant_mult * avg_body
+
+    def _in_trading_hours(self, bar: Bar) -> bool:
+        """Check if bar falls within allowed trading hours (UTC)."""
+        if self.tod_start_hour is None or self.tod_end_hour is None:
+            return True  # No filter
+        try:
+            hour = datetime.fromtimestamp(bar.timestamp, tz=timezone.utc).hour
+        except (OSError, ValueError):
+            return True  # Bad timestamp, don't filter
+        if self.tod_start_hour <= self.tod_end_hour:
+            return self.tod_start_hour <= hour < self.tod_end_hour
+        else:
+            # Wraps midnight (e.g. 22 to 6)
+            return hour >= self.tod_start_hour or hour < self.tod_end_hour
+
+    def _meets_min_atr(self, atr: float) -> bool:
+        """Check if current ATR meets the minimum threshold."""
+        if self.min_atr <= 0:
+            return True
+        return atr >= self.min_atr
 
     def _is_color_game_candidate(self, bar: Bar, sma_fast: float, atr: float) -> bool:
         """
@@ -314,6 +341,12 @@ class ElephantBarStrategy:
         narrow = self._is_narrow(sma_fast, sma_slow, atr)
         elephant = self._is_elephant(bar, avg_body)
         no_tail = bar.is_no_tail
+
+        # Apply optional filters
+        if not self._in_trading_hours(bar):
+            return signals
+        if not self._meets_min_atr(atr):
+            return signals
 
         if narrow and elephant and no_tail:
             # Long signal

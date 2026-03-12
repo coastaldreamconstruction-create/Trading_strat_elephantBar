@@ -32,6 +32,14 @@ TRAILING_STOP = False  # Enable trailing stop (moves stop to breakeven, then tra
 TRAIL_TRIGGER_ATR = 1.0  # Move stop to breakeven after price moves this x ATR in our favor
 TRAIL_STEP_ATR = 0.5     # Once trailing, move stop by this x ATR on each new extreme
 
+# Time-of-day filter (UTC hours, None = no filter)
+# CME equity futures RTH: 14:30-21:00 UTC (9:30 AM - 4:00 PM ET)
+TOD_START_HOUR = None    # Start hour (UTC), e.g. 14 for 2 PM UTC
+TOD_END_HOUR = None      # End hour (UTC), e.g. 21 for 9 PM UTC
+
+# Minimum ATR threshold — skip trades when volatility is too low
+MIN_ATR = 0.0            # Minimum ATR value to allow entries (0 = no filter)
+
 # ─────────────────────────────────────────────
 # Timeframe
 # ─────────────────────────────────────────────
