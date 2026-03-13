@@ -145,7 +145,9 @@ class Broker:
 
     async def stop_stream(self) -> None:
         if self._stream is not None:
-            await self._stream.stop()
+            # Use stop_ws() directly — stop() is sync and deadlocks
+            # when called from the same event loop
+            await self._stream.stop_ws()
 
     # ── Orders ──────────────────────────────────────────────────────────
 
