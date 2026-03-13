@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-A/B Test: Compare strategy variants to isolate the effect of each change.
+A/B Test: Compare strategy improvements independently against the baseline.
 
-Tests:
-  Baseline    — Full strategy (narrow SMAs + elephant bar + no tail)
-  Test G      — No narrow SMA filter (elephant bar + no tail only)
+Each variant changes ONE parameter from baseline so we can isolate its effect.
+
+Variants:
+  Baseline         — Current defaults (elephant_mult=1.5, no TOD filter, no trend filter, push_exit=6)
+  Higher Threshold — elephant_mult=2.0 (stricter elephant bar detection)
+  RTH Only         — TOD filter: 14:30-21:00 UTC (US equity regular trading hours)
+  Elephant Mult 2.5— Even stricter elephant detection
+  Push Exit 8      — Let winners run longer (8 consecutive pushes instead of 6)
+  Trailing Stop    — Enable trailing stop (trigger at 1x ATR, trail at 0.5x ATR)
+  Longs Only       — Disable short signals entirely
 
 Usage:
-    # Uses saved CSVs (no API calls needed)
     python3 scripts/compare_variants.py
-
-    # Specify a single contract
     python3 scripts/compare_variants.py --contract MES
 """
 import argparse
@@ -24,19 +28,37 @@ from src.backtest.engine import Backtester, BacktestResult
 from src import config
 
 
-# Drop SICK from comparison — silver doesn't suit this strategy
-CONTRACTS = ["MES", "MNQ", "MYM", "MCL", "MGC"]
-
 # ── Variant definitions ──
-# Each variant is tested against the baseline in isolation.
+# Each variant overrides only ONE setting from baseline to isolate its effect.
 VARIANTS = {
-    "Baseline (narrow + elephant)": {
-        "push_exit_count": 6,
-        "trailing_stop": False,
+    "Baseline": {
+        # Current defaults
     },
-    "Test G (no narrow SMA filter)": {
-        "push_exit_count": 6,
-        "trailing_stop": False,
+    "Higher Threshold (2.0x)": {
+        "elephant_mult": 2.0,
+    },
+    "Higher Threshold (2.5x)": {
+        "elephant_mult": 2.5,
+    },
+    "RTH Only (14:30-21 UTC)": {
+        "tod_start_hour": 14,
+        "tod_end_hour": 21,
+    },
+    "Push Exit 8": {
+        "push_exit_count": 8,
+    },
+    "Push Exit 10": {
+        "push_exit_count": 10,
+    },
+    "Trailing Stop": {
+        "trailing_stop": True,
+        "trail_trigger_atr": 1.0,
+        "trail_step_atr": 0.5,
+    },
+    "Longs Only": {
+        # allow_shorts handled separately
+    },
+    "No Narrow Filter": {
         "skip_narrow": True,
     },
 }
@@ -50,9 +72,6 @@ def find_csv(root: str) -> str:
     for f in sorted(os.listdir(data_dir), reverse=True):
         if f.startswith(root + "_") and f.endswith(".csv"):
             return os.path.join(data_dir, f)
-        # Also check for SIL CSV when running SICK
-        if root == "SICK" and f.startswith("SIL_") and f.endswith(".csv"):
-            return os.path.join(data_dir, f)
     return ""
 
 
@@ -62,91 +81,94 @@ def run_variant(root: str, bars, variant_name: str, variant_kwargs: dict) -> Bac
     if spec is None:
         return BacktestResult(symbol=root)
 
+    # Handle allow_shorts separately
+    allow_shorts = variant_name != "Longs Only"
+
+    # Filter out non-strategy kwargs
+    strat_kwargs = {k: v for k, v in variant_kwargs.items()}
+
     bt = Backtester(
         symbol=root,
         tick_size=spec["tick_size"],
         tick_value=spec["tick_value"],
-        allow_shorts=True,
+        allow_shorts=allow_shorts,
         starting_capital=config.STARTING_CAPITAL,
         max_daily_loss=config.MAX_DAILY_LOSS,
-        **variant_kwargs,
+        **strat_kwargs,
     )
     return bt.run(bars)
 
 
+def print_table(results: dict, variant_names: list, title: str):
+    """Print a formatted comparison table."""
+    print(f"\n{'=' * 80}")
+    print(f"  {title}")
+    print(f"{'=' * 80}")
+    print(
+        f"  {'Variant':<28} {'Trades':>6} {'Win%':>6} {'AvgW':>8} "
+        f"{'AvgL':>8} {'P&L':>10} {'PF':>6} {'MaxDD':>10}"
+    )
+    print(f"  {'─' * 28} {'─' * 6} {'─' * 6} {'─' * 8} {'─' * 8} {'─' * 10} {'─' * 6} {'─' * 10}")
+
+    for name in variant_names:
+        r = results[name]
+        if r.total_trades == 0:
+            print(f"  {name:<28} {'0':>6} {'N/A':>6} {'N/A':>8} {'N/A':>8} {'$0.00':>10} {'N/A':>6} {'$0.00':>10}")
+            continue
+        pf = f"{r.profit_factor:.2f}" if r.profit_factor != float("inf") else "inf"
+        print(
+            f"  {name:<28} {r.total_trades:>6} {r.win_rate:>5.1%} "
+            f"${r.avg_winner:>7,.2f} ${r.avg_loser:>7,.2f} "
+            f"${r.total_pnl:>9,.2f} {pf:>6} ${r.max_drawdown:>9,.2f}"
+        )
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Compare strategy variants")
-    parser.add_argument("--contract", default=None, help="Single contract to test")
+    parser = argparse.ArgumentParser(description="Compare strategy variants independently")
+    parser.add_argument("--contract", default=None, help="Single contract to test (default: MES)")
     args = parser.parse_args()
 
-    contracts = [args.contract] if args.contract else CONTRACTS
+    # Default to MES since that's the data we have
+    contracts = [args.contract] if args.contract else ["MES"]
 
-    # Load bars for each contract
+    # Load bars
     contract_bars = {}
     for root in contracts:
         csv_path = find_csv(root)
         if not csv_path:
-            print(f"WARNING: No CSV found for {root}. Run backtest with --save-csv first.")
+            print(f"WARNING: No CSV found for {root}. Skipping.")
             continue
         contract_bars[root] = load_bars_from_csv(csv_path)
         print(f"Loaded {len(contract_bars[root]):,} bars for {root} from {csv_path}")
 
     if not contract_bars:
-        print("No data found. Run: python3 scripts/run_backtest.py --all --save-csv")
+        print("No data found. Place CSV files in data/ directory.")
         sys.exit(1)
 
-    print()
+    variant_names = list(VARIANTS.keys())
 
-    # Run each variant across all contracts
-    results = {}  # {variant_name: {root: BacktestResult}}
-    for variant_name, kwargs in VARIANTS.items():
-        results[variant_name] = {}
-        for root, bars in contract_bars.items():
-            results[variant_name][root] = run_variant(root, bars, variant_name, kwargs)
+    # Run each variant per contract
+    for root, bars in contract_bars.items():
+        per_contract_results = {}
+        for variant_name, kwargs in VARIANTS.items():
+            per_contract_results[variant_name] = run_variant(root, bars, variant_name, kwargs)
 
-    # ── Print per-contract comparison ──
-    for root in contract_bars:
-        print(f"\n{'═' * 70}")
-        print(f"  {root} — Variant Comparison")
-        print(f"{'═' * 70}")
-        print(f"  {'Variant':<35} {'Trades':>6} {'Win%':>6} {'P&L':>10} {'PF':>6} {'MaxDD':>10}")
-        print(f"  {'─' * 35} {'─' * 6} {'─' * 6} {'─' * 10} {'─' * 6} {'─' * 10}")
+        print_table(per_contract_results, variant_names, f"{root} — Independent Improvement Comparison")
 
-        for variant_name in VARIANTS:
-            r = results[variant_name][root]
-            pf = f"{r.profit_factor:.2f}" if r.total_trades > 0 else "N/A"
-            wr = f"{r.win_rate:.1%}" if r.total_trades > 0 else "N/A"
-            print(
-                f"  {variant_name:<35} {r.total_trades:>6} {wr:>6} "
-                f"${r.total_pnl:>9,.2f} {pf:>6} ${r.max_drawdown:>9,.2f}"
-            )
-
-    # ── Print combined totals ──
-    print(f"\n{'═' * 70}")
-    print(f"  COMBINED TOTALS (All Contracts)")
-    print(f"{'═' * 70}")
-    print(f"  {'Variant':<35} {'Trades':>6} {'Win%':>6} {'P&L':>10} {'MaxDD':>10}")
-    print(f"  {'─' * 35} {'─' * 6} {'─' * 6} {'─' * 10} {'─' * 10}")
-
-    for variant_name in VARIANTS:
-        total_trades = sum(r.total_trades for r in results[variant_name].values())
-        total_winners = sum(len(r.winners) for r in results[variant_name].values())
-        total_pnl = sum(r.total_pnl for r in results[variant_name].values())
-        total_dd = sum(r.max_drawdown for r in results[variant_name].values())
-        wr = f"{total_winners / total_trades:.1%}" if total_trades > 0 else "N/A"
-        print(
-            f"  {variant_name:<35} {total_trades:>6} {wr:>6} "
-            f"${total_pnl:>9,.2f} ${total_dd:>9,.2f}"
-        )
-
-    print(f"{'═' * 70}")
-
-    # ── Print variant descriptions ──
-    print()
-    print("Variant Descriptions:")
-    print("  Baseline — Full strategy: narrow SMAs (20/200 gap <= 1x ATR) + elephant bar + no tail")
-    print("  Test G   — Remove narrow SMA requirement: only elephant bar + no tail needed")
-    print()
+    # ── Print trade details for best variant ──
+    print(f"\n{'=' * 80}")
+    print("  VARIANT DESCRIPTIONS (each changes ONE thing from baseline)")
+    print(f"{'=' * 80}")
+    print("  Baseline              — Default params: elephant_mult=1.5, push_exit=6, all hours, shorts on")
+    print("  Higher Threshold 2.0x — Stricter elephant bar: body must be >= 2.0x avg (vs 1.5x)")
+    print("  Higher Threshold 2.5x — Even stricter: body must be >= 2.5x avg")
+    print("  RTH Only              — Only trade during US regular hours (9:30AM-4PM ET)")
+    print("  Push Exit 8           — Exit after 8 consecutive pushes (vs 6)")
+    print("  Push Exit 10          — Exit after 10 consecutive pushes (vs 6)")
+    print("  Trailing Stop         — Trail stop to breakeven at 1x ATR, then trail by 0.5x ATR")
+    print("  Longs Only            — No short entries")
+    print("  No Narrow Filter      — Remove SMA convergence requirement")
+    print(f"{'=' * 80}\n")
 
 
 if __name__ == "__main__":
