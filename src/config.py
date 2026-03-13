@@ -55,6 +55,7 @@ CONTRACTS_2MIN = {
     "MCL": {"tick_size": 0.01, "tick_value": 1.00, "multiplier": 100},
     "MGC": {"tick_size": 0.10, "tick_value": 1.00, "multiplier": 10},
     "SICK": {"tick_size": 0.01, "tick_value": 1.00, "multiplier": 100},
+    "MSI":  {"tick_size": 0.10, "tick_value": 1.00, "multiplier": 10},
 }
 
 # 1-hour longs-only subset

@@ -24,7 +24,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.run_backtest import load_bars_from_csv
-from src.backtest.engine import Backtester, BacktestResult
+from src.backtest.engine import Backtester, BacktestResult, Trade
 from src import config
 
 
@@ -128,8 +128,9 @@ def main():
     parser.add_argument("--contract", default=None, help="Single contract to test (default: MES)")
     args = parser.parse_args()
 
-    # Default to MES since that's the data we have
-    contracts = [args.contract] if args.contract else ["MES"]
+    # Default to all contracts we have data for
+    all_contracts = ["MES", "MNQ", "MYM", "MCL", "MGC", "MSI"]
+    contracts = [args.contract] if args.contract else all_contracts
 
     # Load bars
     contract_bars = {}
@@ -147,15 +148,32 @@ def main():
 
     variant_names = list(VARIANTS.keys())
 
-    # Run each variant per contract
+    # Run each variant per contract, store all results
+    all_results = {}  # {variant_name: {root: BacktestResult}}
+    for variant_name in variant_names:
+        all_results[variant_name] = {}
+
     for root, bars in contract_bars.items():
         per_contract_results = {}
         for variant_name, kwargs in VARIANTS.items():
-            per_contract_results[variant_name] = run_variant(root, bars, variant_name, kwargs)
+            result = run_variant(root, bars, variant_name, kwargs)
+            per_contract_results[variant_name] = result
+            all_results[variant_name][root] = result
 
         print_table(per_contract_results, variant_names, f"{root} — Independent Improvement Comparison")
 
-    # ── Print trade details for best variant ──
+    # ── Combined totals across all contracts ──
+    if len(contract_bars) > 1:
+        combined = {}
+        for variant_name in variant_names:
+            trades = []
+            for r in all_results[variant_name].values():
+                trades.extend(r.trades)
+            combined_result = BacktestResult(symbol="ALL", trades=trades)
+            combined[variant_name] = combined_result
+        print_table(combined, variant_names, "COMBINED TOTALS (All Contracts)")
+
+    # ── Print variant descriptions ──
     print(f"\n{'=' * 80}")
     print("  VARIANT DESCRIPTIONS (each changes ONE thing from baseline)")
     print(f"{'=' * 80}")
