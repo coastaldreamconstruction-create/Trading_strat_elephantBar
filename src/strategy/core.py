@@ -93,6 +93,9 @@ class ElephantBarStrategy:
         tod_end_hour: Optional[int] = config.TOD_END_HOUR,
         min_atr: float = config.MIN_ATR,
         skip_narrow: bool = False,
+        require_counter_momentum: bool = False,
+        counter_momentum_lookback: int = 3,
+        min_body_range_ratio: float = 0.90,
     ):
         self.symbol = symbol
         self.tick_size = tick_size
@@ -114,6 +117,9 @@ class ElephantBarStrategy:
         self.tod_end_hour = tod_end_hour
         self.min_atr = min_atr
         self.skip_narrow = skip_narrow
+        self.require_counter_momentum = require_counter_momentum
+        self.counter_momentum_lookback = counter_momentum_lookback
+        self.min_body_range_ratio = min_body_range_ratio
 
         # State
         self.bars: list[Bar] = []
@@ -188,6 +194,30 @@ class ElephantBarStrategy:
         if self.min_atr <= 0:
             return True
         return atr >= self.min_atr
+
+    def _is_counter_momentum(self, bar: Bar) -> bool:
+        """
+        Check if elephant bar goes AGAINST the direction of prior N bars.
+        Data shows counter-momentum elephant bars have better continuation
+        across all 6 contracts (mean-reversion signal).
+        """
+        lookback = self.counter_momentum_lookback
+        if len(self.bars) < lookback + 1:
+            return True  # Not enough history, allow it
+        prior = self.bars[-(lookback + 1):-1]
+        if bar.is_bullish:
+            # Bullish elephant: want prior bars to be mostly bearish
+            bearish_count = sum(1 for b in prior if b.is_bearish)
+            return bearish_count >= 2  # At least 2 of 3 prior bars bearish
+        else:
+            bullish_count = sum(1 for b in prior if b.is_bullish)
+            return bullish_count >= 2
+
+    def _check_body_range(self, bar: Bar) -> bool:
+        """Check if bar's body-to-range ratio meets threshold."""
+        if bar.full_range == 0:
+            return False
+        return bar.body / bar.full_range >= self.min_body_range_ratio
 
     def _is_color_game_candidate(self, bar: Bar, sma_fast: float, atr: float) -> bool:
         """
@@ -342,12 +372,14 @@ class ElephantBarStrategy:
         # ── Look for new entry ──
         narrow = True if self.skip_narrow else self._is_narrow(sma_fast, sma_slow, atr)
         elephant = self._is_elephant(bar, avg_body)
-        no_tail = bar.is_no_tail
+        no_tail = self._check_body_range(bar)
 
         # Apply optional filters
         if not self._in_trading_hours(bar):
             return signals
         if not self._meets_min_atr(atr):
+            return signals
+        if self.require_counter_momentum and not self._is_counter_momentum(bar):
             return signals
 
         if narrow and elephant and no_tail:

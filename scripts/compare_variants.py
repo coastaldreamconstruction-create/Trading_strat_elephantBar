@@ -29,37 +29,59 @@ from src import config
 
 
 # ── Variant definitions ──
-# Each variant overrides only ONE setting from baseline to isolate its effect.
+# Phase 1: original single-parameter tests
+# Phase 2: data-driven patterns from analyze_patterns.py
 VARIANTS = {
     "Baseline": {
         # Current defaults
     },
-    "Higher Threshold (2.0x)": {
-        "elephant_mult": 2.0,
+    "Counter-Momentum": {
+        "require_counter_momentum": True,
     },
-    "Higher Threshold (2.5x)": {
+    "Counter-Mom + 2.5x": {
+        "require_counter_momentum": True,
         "elephant_mult": 2.5,
     },
-    "RTH Only (14:30-21 UTC)": {
-        "tod_start_hour": 14,
-        "tod_end_hour": 21,
-    },
-    "Push Exit 8": {
+    "Counter-Mom + Push8": {
+        "require_counter_momentum": True,
         "push_exit_count": 8,
     },
-    "Push Exit 10": {
-        "push_exit_count": 10,
+    "London (08-14 UTC)": {
+        "tod_start_hour": 8,
+        "tod_end_hour": 14,
     },
-    "Trailing Stop": {
-        "trailing_stop": True,
-        "trail_trigger_atr": 1.0,
-        "trail_step_atr": 0.5,
+    "London+RTH (08-21 UTC)": {
+        "tod_start_hour": 8,
+        "tod_end_hour": 21,
+    },
+    "Skip Asia (08-24 UTC)": {
+        "tod_start_hour": 8,
+        "tod_end_hour": 0,
     },
     "Longs Only": {
         # allow_shorts handled separately
     },
-    "No Narrow Filter": {
+    "Longs + Counter-Mom": {
+        "require_counter_momentum": True,
+        # allow_shorts handled separately
+    },
+    "Body 80% (relaxed)": {
+        "min_body_range_ratio": 0.80,
+    },
+    "Body 95% (strict)": {
+        "min_body_range_ratio": 0.95,
+    },
+    "Best Combo A": {
+        # 2.5x + push 8 + skip narrow (top single variants)
+        "elephant_mult": 2.5,
+        "push_exit_count": 8,
         "skip_narrow": True,
+    },
+    "Best Combo B": {
+        # counter-momentum + 2.5x + push 8
+        "require_counter_momentum": True,
+        "elephant_mult": 2.5,
+        "push_exit_count": 8,
     },
 }
 
@@ -82,7 +104,7 @@ def run_variant(root: str, bars, variant_name: str, variant_kwargs: dict) -> Bac
         return BacktestResult(symbol=root)
 
     # Handle allow_shorts separately
-    allow_shorts = variant_name != "Longs Only"
+    allow_shorts = variant_name not in ("Longs Only", "Longs + Counter-Mom")
 
     # Filter out non-strategy kwargs
     strat_kwargs = {k: v for k, v in variant_kwargs.items()}
@@ -175,17 +197,21 @@ def main():
 
     # ── Print variant descriptions ──
     print(f"\n{'=' * 80}")
-    print("  VARIANT DESCRIPTIONS (each changes ONE thing from baseline)")
+    print("  VARIANT DESCRIPTIONS")
     print(f"{'=' * 80}")
-    print("  Baseline              — Default params: elephant_mult=1.5, push_exit=6, all hours, shorts on")
-    print("  Higher Threshold 2.0x — Stricter elephant bar: body must be >= 2.0x avg (vs 1.5x)")
-    print("  Higher Threshold 2.5x — Even stricter: body must be >= 2.5x avg")
-    print("  RTH Only              — Only trade during US regular hours (9:30AM-4PM ET)")
-    print("  Push Exit 8           — Exit after 8 consecutive pushes (vs 6)")
-    print("  Push Exit 10          — Exit after 10 consecutive pushes (vs 6)")
-    print("  Trailing Stop         — Trail stop to breakeven at 1x ATR, then trail by 0.5x ATR")
-    print("  Longs Only            — No short entries")
-    print("  No Narrow Filter      — Remove SMA convergence requirement")
+    print("  Baseline           — Default: elephant_mult=1.5, push_exit=6, all hours, shorts on")
+    print("  Counter-Momentum   — Only enter when elephant bar opposes prior 3 bars' direction")
+    print("  Counter-Mom + 2.5x — Counter-momentum + stricter elephant (2.5x avg body)")
+    print("  Counter-Mom + Push8— Counter-momentum + exit after 8 pushes")
+    print("  London (08-14)     — Trade only during London session")
+    print("  London+RTH (08-21) — London + US RTH (skip Asia)")
+    print("  Skip Asia (08-24)  — Skip Asia session (worst continuation rates)")
+    print("  Longs Only         — No short entries")
+    print("  Longs + Counter-Mom— Longs only + counter-momentum filter")
+    print("  Body 80% (relaxed) — Lower body-to-range threshold (more signals)")
+    print("  Body 95% (strict)  — Higher body-to-range threshold (fewer, cleaner signals)")
+    print("  Best Combo A       — 2.5x elephant + push 8 + skip narrow")
+    print("  Best Combo B       — Counter-mom + 2.5x elephant + push 8")
     print(f"{'=' * 80}\n")
 
 
