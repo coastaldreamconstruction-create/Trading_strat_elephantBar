@@ -19,6 +19,7 @@ from typing import Callable
 import pandas as pd
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.live import StockDataStream
+from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
@@ -135,7 +136,7 @@ class Broker:
         self._stream = StockDataStream(
             ALPACA_API_KEY,
             ALPACA_SECRET_KEY,
-            feed=ALPACA_DATA_FEED,
+            feed=DataFeed(ALPACA_DATA_FEED),
         )
         log.info("Streaming bars for: %s", ", ".join(symbols))
 
