@@ -32,10 +32,12 @@ MARKET_MA_SHORT = 20
 MARKET_MA_LONG = 200
 
 # ── Trading Window ──────────────────────────────────────────────────────
+# Override via env: TRADING_WINDOW_MINUTES=20 (duration from start or late join)
 TRADING_START_HOUR = 9
 TRADING_START_MINUTE = 30
 TRADING_END_HOUR = 9
 TRADING_END_MINUTE = 50
+TRADING_WINDOW_MINUTES = int(os.getenv("TRADING_WINDOW_MINUTES", "20"))
 
 # ── Elephant Bar Strategy Parameters ────────────────────────────────────
 ELEPHANT_BAR_LOOKBACK = 20          # candles to average for body-size comparison

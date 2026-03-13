@@ -37,6 +37,7 @@ from config.settings import (
     TRADING_END_MINUTE,
     TRADING_START_HOUR,
     TRADING_START_MINUTE,
+    TRADING_WINDOW_MINUTES,
     WATCHLIST,
 )
 from src.data.broker import Broker
@@ -66,6 +67,7 @@ class TradingBot:
         self.trade_count: int = 0
         self.starting_equity: float = 0.0
         self._running = True
+        self._window_end: datetime | None = None
 
     # ── Account display ─────────────────────────────────────────────
 
@@ -122,13 +124,7 @@ class TradingBot:
         now_et = datetime.now(ET)
 
         # Enforce trading window
-        window_end = now_et.replace(
-            hour=TRADING_END_HOUR,
-            minute=TRADING_END_MINUTE,
-            second=0,
-            microsecond=0,
-        )
-        if now_et >= window_end:
+        if self._window_end and now_et >= self._window_end:
             return
 
         # Append bar to buffer
@@ -250,6 +246,28 @@ class TradingBot:
 
     # ── Session lifecycle ───────────────────────────────────────────
 
+    def _compute_window_end(self) -> datetime:
+        """Compute the session end time.
+
+        If started before or at 9:30, the window ends at 9:50.
+        If started late (after 9:30), the window is the *later* of
+        the normal 9:50 cutoff or now + TRADING_WINDOW_MINUTES, capped at 4 PM.
+        """
+        now = datetime.now(ET)
+        normal_end = now.replace(
+            hour=TRADING_END_HOUR,
+            minute=TRADING_END_MINUTE,
+            second=0,
+            microsecond=0,
+        )
+        market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        late_end = now + timedelta(minutes=TRADING_WINDOW_MINUTES)
+
+        # Use whichever is later (normal window vs late-start window),
+        # but never past market close.
+        end = max(normal_end, late_end)
+        return min(end, market_close)
+
     async def wait_for_market_open(self) -> None:
         """Sleep until 9:30 AM ET."""
         now = datetime.now(ET)
@@ -272,23 +290,28 @@ class TradingBot:
             await asyncio.sleep(wait_secs)
 
     async def run_session(self, symbols: list[str]) -> None:
-        """Run the 9:30–9:50 trading session."""
+        """Run the trading session."""
         acct = self.broker.get_account()
         balance = float(acct.equity)
 
         tickers_str = ", ".join(symbols)
         mode = "PAPER" if PAPER_MODE else "LIVE"
 
+        window_end = self._compute_window_end()
+        self._window_end = window_end
+        end_str = window_end.strftime("%-I:%M %p ET")
+
         log.info(
             "Session started | Balance: $%s | Tickers: %s | Mode: %s",
             f"{balance:,.2f}", tickers_str, mode,
         )
+        log.info("Trading window ends at %s", end_str)
 
         notify(
             f"🔔 **{'📄 PAPER' if PAPER_MODE else '💰 LIVE'} SESSION STARTED**\n"
             f"Balance:   `${balance:,.2f}`\n"
             f"Watching:  `{tickers_str}`\n"
-            f"Window:    `9:30 – 9:50 AM ET`"
+            f"Window:    `9:30 – {end_str}`"
         )
 
         # Warm up minute-level buffers with historical bars
@@ -299,16 +322,11 @@ class TradingBot:
             self.broker.stream_bars(symbols, self.on_bar)
         )
 
-        # Wait until 9:50 AM
+        # Wait until window end
         now = datetime.now(ET)
-        window_end = now.replace(
-            hour=TRADING_END_HOUR,
-            minute=TRADING_END_MINUTE,
-            second=0,
-            microsecond=0,
-        )
         remaining = (window_end - now).total_seconds()
         if remaining > 0:
+            log.info("Streaming live bars for %d minutes...", int(remaining / 60))
             await asyncio.sleep(remaining)
 
         log.info("Trading window closed (9:50 AM timeout).")
