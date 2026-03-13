@@ -61,18 +61,42 @@ def save_bars_to_csv(bars: list[Bar], filepath: str):
 
 
 def load_bars_from_csv(filepath: str) -> list[Bar]:
-    """Load bars from a previously saved CSV."""
+    """Load bars from a previously saved CSV. Handles both numeric timestamps
+    and datetime strings (e.g. '2026-01-30 00:00:00+00:00')."""
+    from datetime import datetime, timezone
+
     bars = []
     with open(filepath, "r") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            # Detect timestamp column name
+            ts_raw = (
+                row.get("timestamp")
+                or row.get("Datetime")
+                or row.get("datetime")
+                or row.get("time")
+                or row.get("Date")
+                or row.get("date")
+                or "0"
+            )
+
+            # Parse: numeric or datetime string
+            try:
+                ts = float(ts_raw)
+            except ValueError:
+                try:
+                    dt = datetime.fromisoformat(ts_raw)
+                    ts = dt.timestamp()
+                except Exception:
+                    ts = 0.0
+
             bars.append(Bar(
-                timestamp=float(row["timestamp"]),
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=float(row["volume"]),
+                timestamp=ts,
+                open=float(row.get("open") or row.get("Open") or 0),
+                high=float(row.get("high") or row.get("High") or 0),
+                low=float(row.get("low") or row.get("Low") or 0),
+                close=float(row.get("close") or row.get("Close") or 0),
+                volume=float(row.get("volume") or row.get("Volume") or 0),
             ))
     logger.info("Loaded %d bars from %s", len(bars), filepath)
     return bars
