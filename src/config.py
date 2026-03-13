@@ -24,10 +24,10 @@ SMA_FAST = 20          # Fast SMA period (bars)
 SMA_SLOW = 200         # Slow SMA period (bars)
 ATR_PERIOD = 14        # ATR lookback period
 NARROW_THRESHOLD = 1.0 # SMA gap must be <= this x ATR to qualify as "narrow"
-ELEPHANT_MULT = 2.0    # Candle body must be >= this x avg body size
+ELEPHANT_MULT = 1.5    # Candle body must be >= this x avg body size
 AVG_BODY_PERIOD = 20   # Lookback for average body size calculation
 PROXIMITY_ATR = 1.5    # Color-game add-on: bar must be within this x ATR of 20 SMA
-PUSH_EXIT_COUNT = 3    # Number of consecutive new highs/lows to trigger exit
+PUSH_EXIT_COUNT = 6    # Number of consecutive new highs/lows to trigger exit
 TRAILING_STOP = False  # Enable trailing stop (moves stop to breakeven, then trails)
 TRAIL_TRIGGER_ATR = 1.0  # Move stop to breakeven after price moves this x ATR in our favor
 TRAIL_STEP_ATR = 0.5     # Once trailing, move stop by this x ATR on each new extreme
