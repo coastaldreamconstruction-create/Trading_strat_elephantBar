@@ -96,6 +96,9 @@ class ElephantBarStrategy:
         require_counter_momentum: bool = False,
         counter_momentum_lookback: int = 3,
         min_body_range_ratio: float = 0.90,
+        skip_days: Optional[list[int]] = None,
+        max_stop_ticks: float = 0,
+        time_stop_bars: int = 0,
     ):
         self.symbol = symbol
         self.tick_size = tick_size
@@ -120,6 +123,10 @@ class ElephantBarStrategy:
         self.require_counter_momentum = require_counter_momentum
         self.counter_momentum_lookback = counter_momentum_lookback
         self.min_body_range_ratio = min_body_range_ratio
+        self.skip_days = skip_days or []
+        self.max_stop_ticks = max_stop_ticks
+        self.time_stop_bars = time_stop_bars
+        self._bars_in_trade = 0
 
         # State
         self.bars: list[Bar] = []
@@ -218,6 +225,16 @@ class ElephantBarStrategy:
         if bar.full_range == 0:
             return False
         return bar.body / bar.full_range >= self.min_body_range_ratio
+
+    def _is_allowed_day(self, bar: Bar) -> bool:
+        """Check if bar falls on an allowed day of week (0=Mon, 6=Sun)."""
+        if not self.skip_days:
+            return True
+        try:
+            dow = datetime.fromtimestamp(bar.timestamp, tz=timezone.utc).weekday()
+        except (OSError, ValueError):
+            return True
+        return dow not in self.skip_days
 
     def _is_color_game_candidate(self, bar: Bar, sma_fast: float, atr: float) -> bool:
         """
@@ -333,6 +350,22 @@ class ElephantBarStrategy:
 
         # ── Manage existing trade ──
         if self.open_trade is not None:
+            self._bars_in_trade += 1
+
+            # Time-based stop: exit if trade has been open too long without hitting push exit
+            if self.time_stop_bars > 0 and self._bars_in_trade >= self.time_stop_bars:
+                signals.append(Signal(
+                    direction=self.open_trade.direction,
+                    entry_price=bar.close,
+                    stop_price=0,
+                    symbol=self.symbol,
+                    bar_timestamp=bar.timestamp,
+                    signal_type="STOP_EXIT",
+                ))
+                self.open_trade = None
+                self._bars_in_trade = 0
+                return signals
+
             # Update trailing stop before checking it
             self._update_trailing_stop(bar)
 
@@ -381,12 +414,19 @@ class ElephantBarStrategy:
             return signals
         if self.require_counter_momentum and not self._is_counter_momentum(bar):
             return signals
+        if not self._is_allowed_day(bar):
+            return signals
 
         if narrow and elephant and no_tail:
             # Long signal
             if bar.is_bullish:
                 entry = bar.high + self.tick_size  # 1 tick above high
                 stop = bar.low  # Full wick low
+                # Max stop distance filter
+                if self.max_stop_ticks > 0:
+                    stop_ticks = abs(entry - stop) / self.tick_size
+                    if stop_ticks > self.max_stop_ticks:
+                        return signals
                 signals.append(Signal(
                     direction="LONG",
                     entry_price=entry,
@@ -398,6 +438,10 @@ class ElephantBarStrategy:
             elif bar.is_bearish and self.allow_shorts:
                 entry = bar.low - self.tick_size  # 1 tick below low
                 stop = bar.high  # Full wick high
+                if self.max_stop_ticks > 0:
+                    stop_ticks = abs(entry - stop) / self.tick_size
+                    if stop_ticks > self.max_stop_ticks:
+                        return signals
                 signals.append(Signal(
                     direction="SHORT",
                     entry_price=entry,
@@ -410,6 +454,7 @@ class ElephantBarStrategy:
 
     def register_fill(self, signal: Signal):
         """Call this once the broker confirms a fill on an entry signal."""
+        self._bars_in_trade = 0
         self.open_trade = OpenTrade(
             symbol=signal.symbol,
             direction=signal.direction,

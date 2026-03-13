@@ -29,59 +29,74 @@ from src import config
 
 
 # ── Variant definitions ──
-# Phase 1: original single-parameter tests
-# Phase 2: data-driven patterns from analyze_patterns.py
+# Best Combo B is the baseline now (counter-mom + 2.5x + push 8)
+# Phase 3: loss analysis improvements applied ON TOP of Best Combo B
+_BEST_B = {
+    "require_counter_momentum": True,
+    "elephant_mult": 2.5,
+    "push_exit_count": 8,
+}
+
 VARIANTS = {
-    "Baseline": {
-        # Current defaults
-    },
-    "Counter-Momentum": {
-        "require_counter_momentum": True,
-    },
-    "Counter-Mom + 2.5x": {
-        "require_counter_momentum": True,
-        "elephant_mult": 2.5,
-    },
-    "Counter-Mom + Push8": {
-        "require_counter_momentum": True,
-        "push_exit_count": 8,
-    },
-    "London (08-14 UTC)": {
-        "tod_start_hour": 8,
-        "tod_end_hour": 14,
-    },
-    "London+RTH (08-21 UTC)": {
-        "tod_start_hour": 8,
-        "tod_end_hour": 21,
-    },
-    "Skip Asia (08-24 UTC)": {
-        "tod_start_hour": 8,
-        "tod_end_hour": 0,
-    },
-    "Longs Only": {
-        # allow_shorts handled separately
-    },
-    "Longs + Counter-Mom": {
-        "require_counter_momentum": True,
-        # allow_shorts handled separately
-    },
-    "Body 80% (relaxed)": {
-        "min_body_range_ratio": 0.80,
-    },
-    "Body 95% (strict)": {
-        "min_body_range_ratio": 0.95,
-    },
-    "Best Combo A": {
-        # 2.5x + push 8 + skip narrow (top single variants)
-        "elephant_mult": 2.5,
-        "push_exit_count": 8,
-        "skip_narrow": True,
+    "Original Baseline": {
+        # Original defaults for reference
     },
     "Best Combo B": {
-        # counter-momentum + 2.5x + push 8
-        "require_counter_momentum": True,
-        "elephant_mult": 2.5,
-        "push_exit_count": 8,
+        **_BEST_B,
+    },
+    "B + Skip Evening": {
+        **_BEST_B,
+        "tod_start_hour": 0,
+        "tod_end_hour": 21,
+    },
+    "B + Skip Sun": {
+        **_BEST_B,
+        "skip_days": [6],
+    },
+    "B + Skip Thu/Fri/Sun": {
+        **_BEST_B,
+        "skip_days": [3, 4, 6],
+    },
+    "B + Mon-Wed Only": {
+        **_BEST_B,
+        "skip_days": [3, 4, 5, 6],
+    },
+    "B + Max 40 Ticks": {
+        **_BEST_B,
+        "max_stop_ticks": 40,
+    },
+    "B + Max 75 Ticks": {
+        **_BEST_B,
+        "max_stop_ticks": 75,
+    },
+    "B + TimeStop 150": {
+        **_BEST_B,
+        "time_stop_bars": 150,
+    },
+    "B + TimeStop 300": {
+        **_BEST_B,
+        "time_stop_bars": 300,
+    },
+    "B + Skip Eve+Sun": {
+        **_BEST_B,
+        "tod_start_hour": 0,
+        "tod_end_hour": 21,
+        "skip_days": [6],
+    },
+    "B+SkipEve+Sun+Max75": {
+        **_BEST_B,
+        "tod_start_hour": 0,
+        "tod_end_hour": 21,
+        "skip_days": [6],
+        "max_stop_ticks": 75,
+    },
+    "ULTIMATE": {
+        **_BEST_B,
+        "tod_start_hour": 0,
+        "tod_end_hour": 21,
+        "skip_days": [6],
+        "max_stop_ticks": 75,
+        "time_stop_bars": 300,
     },
 }
 
@@ -104,7 +119,7 @@ def run_variant(root: str, bars, variant_name: str, variant_kwargs: dict) -> Bac
         return BacktestResult(symbol=root)
 
     # Handle allow_shorts separately
-    allow_shorts = variant_name not in ("Longs Only", "Longs + Counter-Mom")
+    allow_shorts = "Longs" not in variant_name
 
     # Filter out non-strategy kwargs
     strat_kwargs = {k: v for k, v in variant_kwargs.items()}
@@ -197,21 +212,21 @@ def main():
 
     # ── Print variant descriptions ──
     print(f"\n{'=' * 80}")
-    print("  VARIANT DESCRIPTIONS")
+    print("  VARIANT DESCRIPTIONS (all build on Best Combo B)")
     print(f"{'=' * 80}")
-    print("  Baseline           — Default: elephant_mult=1.5, push_exit=6, all hours, shorts on")
-    print("  Counter-Momentum   — Only enter when elephant bar opposes prior 3 bars' direction")
-    print("  Counter-Mom + 2.5x — Counter-momentum + stricter elephant (2.5x avg body)")
-    print("  Counter-Mom + Push8— Counter-momentum + exit after 8 pushes")
-    print("  London (08-14)     — Trade only during London session")
-    print("  London+RTH (08-21) — London + US RTH (skip Asia)")
-    print("  Skip Asia (08-24)  — Skip Asia session (worst continuation rates)")
-    print("  Longs Only         — No short entries")
-    print("  Longs + Counter-Mom— Longs only + counter-momentum filter")
-    print("  Body 80% (relaxed) — Lower body-to-range threshold (more signals)")
-    print("  Body 95% (strict)  — Higher body-to-range threshold (fewer, cleaner signals)")
-    print("  Best Combo A       — 2.5x elephant + push 8 + skip narrow")
-    print("  Best Combo B       — Counter-mom + 2.5x elephant + push 8")
+    print("  Original Baseline  — Default params for reference")
+    print("  Best Combo B       — Counter-mom + 2.5x elephant + push 8 (our best so far)")
+    print("  + Skip Evening     — No trades 21:00-00:00 UTC (6% WR session)")
+    print("  + Skip Sun         — No Sunday trades (0% WR)")
+    print("  + Skip Thu/Fri/Sun — Only Mon-Wed trades (Mon/Tue carry the strategy)")
+    print("  + Mon-Wed Only     — Strictest day filter")
+    print("  + Max 40 Ticks     — Cap stop distance at 40 ticks")
+    print("  + Max 75 Ticks     — Cap stop distance at 75 ticks")
+    print("  + TimeStop 150     — Exit at market after 150 bars (~5 hrs) if no push exit")
+    print("  + TimeStop 300     — Exit at market after 300 bars (~10 hrs)")
+    print("  + Skip Eve+Sun     — Combined evening + Sunday filter")
+    print("  + SkipEve+Sun+Max75— Evening + Sunday + max 75 tick stop")
+    print("  ULTIMATE           — All filters: eve + sun + max75 + timestop300")
     print(f"{'=' * 80}\n")
 
 
